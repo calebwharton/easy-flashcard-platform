@@ -1,8 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+export type PartOfSpeech = "verb" | "noun" | "adj" | "adv";
 
-// ─── CARD DATA ────────────────────────────────────────────────────────────────
-const BASE_CARDS = [
-  // VERBS
+export type SeedCardRecord = {
+  sp: string;
+  en: string;
+  type: PartOfSpeech;
+  freq: number;
+};
+
+export const SEED_CARD_DECK: SeedCardRecord[] = [
   { sp: "decir", en: "to say / to tell", type: "verb", freq: 932 },
   { sp: "preguntar", en: "to ask / to question", type: "verb", freq: 156 },
   { sp: "gritar", en: "to shout / to scream", type: "verb", freq: 82 },
@@ -148,8 +153,6 @@ const BASE_CARDS = [
   { sp: "famoso", en: "famous / renowned [fama] (Lockhart is famoso)", type: "adj", freq: 14 },
   { sp: "inmóvil", en: "motionless / still / immobile [moverse]", type: "adj", freq: 12 },
   { sp: "petrificado", en: "petrified / frozen in fear (lit: turned to stone) [petrificar]", type: "adj", freq: 20 },
-
-  // ── BATCH 2 (words 51–100 by corpus frequency, normalized) ──
   { sp: "grande", en: "big / great / large (gran before noun = great)", type: "adj", freq: 46 },
   { sp: "tío", en: "uncle (tío Vernon = Uncle Vernon; colloquial: guy/dude)", type: "noun", freq: 45 },
   { sp: "oído", en: "ear / inner hearing (tocar de oído = to play by ear)", type: "noun", freq: 45 },
@@ -300,8 +303,6 @@ const BASE_CARDS = [
   { sp: "pálido", en: "pale / pallid (quedarse pálido = to go pale from shock or fear)", type: "adj", freq: 17 },
   { sp: "imagen", en: "image / picture / reflection (la imagen en el espejo = the image in the mirror)", type: "noun", freq: 17 },
   { sp: "acercarse", en: "to approach / to draw near / to come closer", type: "verb", freq: 17 },
-
-  // ── BATCH 4 (words 201–300 by corpus frequency, normalized) ──
   { sp: "aseo", en: "toilet / washroom (aseos = bathrooms — Myrtle haunts the girls' aseos)", type: "noun", freq: 24 },
   { sp: "inmediatamente", en: "immediately / at once", type: "adv", freq: 23 },
   { sp: "abajo", en: "below / down / downstairs (hacia abajo = downward; boca abajo = face down)", type: "adv", freq: 22 },
@@ -395,620 +396,51 @@ const BASE_CARDS = [
   { sp: "oscurecer", en: "to darken / to grow dark (el cielo empezó a oscurecer = the sky began to darken)", type: "verb", freq: 15 },
 ];
 
-// ─── SRS ENGINE ───────────────────────────────────────────────────────────────
-function initCard(card) {
-  return {
-    ...card,
-    id: card.sp,
-    interval: 0,
-    easeFactor: 2.5,
-    repetitions: 0,
-    dueDate: Date.now(),
-    lapses: 0,
+export type AppSeedCard = {
+  front: string;
+  back: string;
+  tags: string[];
+  extra: {
+    type: PartOfSpeech;
+    freq: number;
+    source: "hp-chamber-of-secrets";
   };
-}
+};
 
-function gradeCard(card, grade) {
-  // grade: 0=Again, 1=Hard, 2=Good, 3=Easy
-  let { interval, easeFactor, repetitions, lapses } = card;
+const dedupeKey = (record: SeedCardRecord) =>
+  `${record.sp.trim().toLowerCase()}|${record.en.trim().toLowerCase()}|${record.type}`;
 
-  if (grade === 0) {
-    lapses += 1;
-    interval = 1;
-    repetitions = 0;
-    easeFactor = Math.max(1.3, easeFactor - 0.2);
-  } else {
-    if (repetitions === 0) {
-      interval = grade === 3 ? 4 : 1;
-    } else if (repetitions === 1) {
-      interval = grade === 3 ? 6 : 3;
-    } else {
-      const multiplier = grade === 1 ? 1.2 : grade === 2 ? easeFactor : easeFactor * 1.3;
-      interval = Math.round(interval * multiplier);
-    }
-    easeFactor = Math.max(1.3, easeFactor + (0.1 - (3 - grade) * (0.08 + (3 - grade) * 0.02)));
-    repetitions += 1;
+export const FORMATTED_SEED_CARDS: AppSeedCard[] = SEED_CARD_DECK.reduce<AppSeedCard[]>((cards, record) => {
+  const normalizedFront = record.sp.trim();
+  const normalizedBack = record.en.trim();
+
+  if (!normalizedFront || !normalizedBack) {
+    return cards;
   }
 
-  const dueDate = Date.now() + interval * 24 * 60 * 60 * 1000;
-  return { ...card, interval, easeFactor, repetitions, dueDate, lapses };
-}
+  const key = dedupeKey(record);
+  const alreadyIncluded = cards.some(
+    (card) =>
+      `${card.front.trim().toLowerCase()}|${card.back.trim().toLowerCase()}|${card.extra.type}` === key,
+  );
 
-function getDueCards(cards) {
-  const now = Date.now();
-  return cards.filter(c => c.dueDate <= now);
-}
-
-// ─── STORAGE ──────────────────────────────────────────────────────────────────
-const STORAGE_KEY = "hp_srs_v2";
-
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch {
-    return null;
+  if (alreadyIncluded) {
+    return cards;
   }
-}
 
-function saveState(state) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch {}
-}
+  cards.push({
+    front: normalizedFront,
+    back: normalizedBack,
+    tags: [record.type, "hp-chamber-of-secrets", `freq-${Math.max(1, Math.round(record.freq / 10) * 10)}`],
+    extra: {
+      type: record.type,
+      freq: record.freq,
+      source: "hp-chamber-of-secrets",
+    },
+  });
 
-// ─── ICONS ────────────────────────────────────────────────────────────────────
-const Icon = ({ name, size = 16 }) => {
-  const icons = {
-    wand: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M15 4l5 5-8 8-5-5 8-8zM2 22l4-4M9 3l2 2M3 9l2 2M21 12l-2 2" />
-      </svg>
-    ),
-    plus: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 5v14M5 12h14" />
-      </svg>
-    ),
-    x: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M18 6L6 18M6 6l12 12" />
-      </svg>
-    ),
-    refresh: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15" />
-      </svg>
-    ),
-    eye: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" /><circle cx="12" cy="12" r="3" />
-      </svg>
-    ),
-    star: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" stroke="none">
-        <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26" />
-      </svg>
-    ),
-    book: (
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-      </svg>
-    ),
-  };
-  return icons[name] || null;
-};
+  return cards;
+}, []);
 
-// ─── TYPE BADGE ───────────────────────────────────────────────────────────────
-const TypeBadge = ({ type }) => {
-  const styles = {
-    verb: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-    noun: "bg-violet-500/20 text-violet-300 border-violet-500/30",
-    adj: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-  };
-  const labels = { verb: "VERB", noun: "NOUN", adj: "ADJ" };
-  return (
-    <span className={`text-xs font-bold px-2 py-0.5 rounded border ${styles[type] || styles.noun}`}>
-      {labels[type] || type.toUpperCase()}
-    </span>
-  );
-};
-
-// ─── PROGRESS RING ────────────────────────────────────────────────────────────
-const ProgressRing = ({ value, max, size = 56, stroke = 4, color = "#a78bfa" }) => {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const pct = max > 0 ? value / max : 0;
-  const offset = circ * (1 - pct);
-  return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth={stroke} />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color}
-        strokeWidth={stroke} strokeDasharray={circ} strokeDashoffset={offset}
-        strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.5s ease" }} />
-    </svg>
-  );
-};
-
-// ─── MAIN APP ─────────────────────────────────────────────────────────────────
-export default function App() {
-  const [cards, setCards] = useState([]);
-  const [flipped, setFlipped] = useState(false);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [dueList, setDueList] = useState([]);
-  const [showModal, setShowModal] = useState(false);
-  const [showStats, setShowStats] = useState(false);
-  const [sessionStats, setSessionStats] = useState({ reviewed: 0, again: 0, good: 0, easy: 0 });
-  const [newCard, setNewCard] = useState({ sp: "", en: "", type: "noun" });
-  const [filterType, setFilterType] = useState("all");
-  const [toastMsg, setToastMsg] = useState("");
-  const toastTimeout = useRef(null);
-
-  // Init
-  useEffect(() => {
-    const saved = loadState();
-    let initialCards;
-    if (saved && saved.cards && saved.cards.length > 0) {
-      // Merge: add any new base cards not in saved
-      const savedIds = new Set(saved.cards.map(c => c.id));
-      const newBaseCards = BASE_CARDS.filter(c => !savedIds.has(c.sp)).map(initCard);
-      initialCards = [...saved.cards, ...newBaseCards];
-    } else {
-      initialCards = BASE_CARDS.map(initCard);
-    }
-    setCards(initialCards);
-  }, []);
-
-  // Update due list when cards change
-  useEffect(() => {
-    if (cards.length === 0) return;
-    let filtered = filterType === "all" ? cards : cards.filter(c => c.type === filterType);
-    const due = getDueCards(filtered);
-    setDueList(due);
-    setCurrentIndex(0);
-    setFlipped(false);
-  }, [cards, filterType]);
-
-  // Save on change
-  useEffect(() => {
-    if (cards.length > 0) saveState({ cards });
-  }, [cards]);
-
-  const showToast = (msg) => {
-    setToastMsg(msg);
-    clearTimeout(toastTimeout.current);
-    toastTimeout.current = setTimeout(() => setToastMsg(""), 2000);
-  };
-
-  const handleGrade = (grade) => {
-    const card = dueList[currentIndex];
-    if (!card) return;
-    const updated = gradeCard(card, grade);
-    setCards(prev => prev.map(c => c.id === updated.id ? updated : c));
-    setSessionStats(prev => ({
-      reviewed: prev.reviewed + 1,
-      again: prev.again + (grade === 0 ? 1 : 0),
-      good: prev.good + (grade === 2 ? 1 : 0),
-      easy: prev.easy + (grade === 3 ? 1 : 0),
-    }));
-    setFlipped(false);
-    setTimeout(() => {
-      setCurrentIndex(i => (i + 1 < dueList.length - 1 ? i + 1 : 0));
-    }, 80);
-  };
-
-  const handleAddCard = () => {
-    if (!newCard.sp.trim() || !newCard.en.trim()) { showToast("Fill both fields!"); return; }
-    const card = initCard({ ...newCard, freq: 0, sp: newCard.sp.trim().toLowerCase(), en: newCard.en.trim() });
-    card.id = `custom_${card.sp}_${Date.now()}`;
-    setCards(prev => [...prev, card]);
-    setNewCard({ sp: "", en: "", type: "noun" });
-    setShowModal(false);
-    showToast("✨ Card added!");
-  };
-
-  const resetProgress = () => {
-    const reset = cards.map(c => ({ ...c, interval: 0, easeFactor: 2.5, repetitions: 0, dueDate: Date.now(), lapses: 0 }));
-    setCards(reset);
-    setSessionStats({ reviewed: 0, again: 0, good: 0, easy: 0 });
-    showToast("Progress reset.");
-  };
-
-  const currentCard = dueList[currentIndex];
-  const totalDue = dueList.length;
-  const learned = cards.filter(c => c.repetitions >= 2).length;
-  const mastered = cards.filter(c => c.interval >= 21).length;
-
-  // Stats breakdown
-  const byType = {
-    verb: cards.filter(c => c.type === "verb").length,
-    noun: cards.filter(c => c.type === "noun").length,
-    adj: cards.filter(c => c.type === "adj").length,
-  };
-
-  return (
-    <div style={{
-      minHeight: "100vh",
-      background: "linear-gradient(135deg, #0a0a1a 0%, #0f0f2e 40%, #0a1628 100%)",
-      fontFamily: "'Georgia', 'Times New Roman', serif",
-      position: "relative",
-      overflow: "hidden",
-    }}>
-      {/* Ambient glow blobs */}
-      <div style={{ position: "fixed", top: "-20%", left: "-10%", width: "50vw", height: "50vw",
-        background: "radial-gradient(ellipse, rgba(120,60,220,0.12) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
-      <div style={{ position: "fixed", bottom: "-10%", right: "-5%", width: "40vw", height: "40vw",
-        background: "radial-gradient(ellipse, rgba(30,80,200,0.1) 0%, transparent 70%)", pointerEvents: "none", zIndex: 0 }} />
-
-      {/* Toast */}
-      {toastMsg && (
-        <div style={{ position: "fixed", top: 24, left: "50%", transform: "translateX(-50%)",
-          background: "rgba(167,139,250,0.95)", color: "#0a0a1a", padding: "8px 20px",
-          borderRadius: 999, fontFamily: "sans-serif", fontSize: 13, fontWeight: 700,
-          zIndex: 1000, boxShadow: "0 4px 24px rgba(0,0,0,0.4)", backdropFilter: "blur(8px)" }}>
-          {toastMsg}
-        </div>
-      )}
-
-      <div style={{ maxWidth: 680, margin: "0 auto", padding: "16px 16px 80px", position: "relative", zIndex: 1 }}>
-
-        {/* HEADER */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, paddingTop: 8 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 36, height: 36, background: "linear-gradient(135deg, #7c3aed, #3b82f6)",
-              borderRadius: 10, display: "flex", alignItems: "center", justifyContent: "center",
-              boxShadow: "0 0 20px rgba(124,58,237,0.5)" }}>
-              <Icon name="wand" size={18} />
-            </div>
-            <div>
-              <div style={{ color: "#e2d9f3", fontWeight: 700, fontSize: 17, letterSpacing: "0.02em" }}>HP Español</div>
-              <div style={{ color: "#6b7280", fontSize: 11, fontFamily: "sans-serif", letterSpacing: "0.08em" }}>
-                CÁMARA SECRETA · B2/C1
-              </div>
-            </div>
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            <button onClick={() => setShowStats(s => !s)}
-              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
-                borderRadius: 8, color: "#a78bfa", padding: "6px 12px", cursor: "pointer",
-                fontFamily: "sans-serif", fontSize: 12, letterSpacing: "0.05em" }}>
-              {showStats ? "CARDS" : "STATS"}
-            </button>
-            <button onClick={() => setShowModal(true)}
-              style={{ background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                border: "none", borderRadius: 8, color: "white", padding: "6px 12px",
-                cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
-                fontFamily: "sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.05em" }}>
-              <Icon name="plus" size={14} /> ADD
-            </button>
-          </div>
-        </div>
-
-        {/* QUICK STATS ROW */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginBottom: 20 }}>
-          {[
-            { label: "Total", value: cards.length, color: "#e2d9f3" },
-            { label: "Due", value: totalDue, color: totalDue > 0 ? "#f59e0b" : "#10b981" },
-            { label: "Learned", value: learned, color: "#a78bfa" },
-            { label: "Mastered", value: mastered, color: "#34d399" },
-          ].map(({ label, value, color }) => (
-            <div key={label} style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 10, padding: "10px 8px", textAlign: "center" }}>
-              <div style={{ color, fontWeight: 700, fontSize: 20, lineHeight: 1 }}>{value}</div>
-              <div style={{ color: "#6b7280", fontSize: 10, fontFamily: "sans-serif",
-                letterSpacing: "0.1em", marginTop: 4 }}>{label.toUpperCase()}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* FILTER TABS */}
-        <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>
-          {["all", "verb", "noun", "adj"].map(t => (
-            <button key={t} onClick={() => setFilterType(t)}
-              style={{ background: filterType === t ? "rgba(124,58,237,0.3)" : "rgba(255,255,255,0.04)",
-                border: `1px solid ${filterType === t ? "rgba(167,139,250,0.5)" : "rgba(255,255,255,0.08)"}`,
-                borderRadius: 8, color: filterType === t ? "#c4b5fd" : "#6b7280",
-                padding: "5px 12px", cursor: "pointer", fontFamily: "sans-serif",
-                fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", transition: "all 0.15s" }}>
-              {t.toUpperCase()} {t !== "all" ? `(${byType[t] || 0})` : ""}
-            </button>
-          ))}
-        </div>
-
-        {/* STATS VIEW */}
-        {showStats ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 16, padding: 24 }}>
-              <div style={{ color: "#e2d9f3", fontWeight: 700, fontSize: 15, marginBottom: 20 }}>Session Progress</div>
-              <div style={{ display: "flex", justifyContent: "space-around", alignItems: "center" }}>
-                <div style={{ textAlign: "center" }}>
-                  <ProgressRing value={sessionStats.reviewed} max={Math.max(sessionStats.reviewed, 10)} size={64} color="#a78bfa" />
-                  <div style={{ color: "#c4b5fd", fontSize: 11, fontFamily: "sans-serif",
-                    marginTop: 8, letterSpacing: "0.08em" }}>REVIEWED</div>
-                  <div style={{ color: "white", fontWeight: 700, fontSize: 18, marginTop: 2 }}>{sessionStats.reviewed}</div>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <ProgressRing value={learned} max={cards.length} size={64} color="#34d399" />
-                  <div style={{ color: "#6ee7b7", fontSize: 11, fontFamily: "sans-serif",
-                    marginTop: 8, letterSpacing: "0.08em" }}>LEARNED</div>
-                  <div style={{ color: "white", fontWeight: 700, fontSize: 18, marginTop: 2 }}>
-                    {Math.round(learned / cards.length * 100)}%
-                  </div>
-                </div>
-                <div style={{ textAlign: "center" }}>
-                  <ProgressRing value={mastered} max={cards.length} size={64} color="#f59e0b" />
-                  <div style={{ color: "#fcd34d", fontSize: 11, fontFamily: "sans-serif",
-                    marginTop: 8, letterSpacing: "0.08em" }}>MASTERED</div>
-                  <div style={{ color: "white", fontWeight: 700, fontSize: 18, marginTop: 2 }}>
-                    {Math.round(mastered / cards.length * 100)}%
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 16, padding: 24 }}>
-              <div style={{ color: "#e2d9f3", fontWeight: 700, fontSize: 15, marginBottom: 16 }}>Grade Breakdown</div>
-              {[
-                { label: "Again (failed)", val: sessionStats.again, color: "#ef4444" },
-                { label: "Good", val: sessionStats.good, color: "#10b981" },
-                { label: "Easy", val: sessionStats.easy, color: "#3b82f6" },
-              ].map(({ label, val, color }) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
-                  <div style={{ color: "#9ca3af", fontFamily: "sans-serif", fontSize: 12, width: 120 }}>{label}</div>
-                  <div style={{ flex: 1, height: 6, background: "rgba(255,255,255,0.08)", borderRadius: 999 }}>
-                    <div style={{ height: "100%", background: color, borderRadius: 999,
-                      width: `${sessionStats.reviewed > 0 ? (val / sessionStats.reviewed * 100) : 0}%`,
-                      transition: "width 0.5s ease" }} />
-                  </div>
-                  <div style={{ color, fontWeight: 700, fontFamily: "sans-serif", fontSize: 13, width: 28, textAlign: "right" }}>{val}</div>
-                </div>
-              ))}
-            </div>
-            <button onClick={resetProgress}
-              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)",
-                borderRadius: 10, color: "#f87171", padding: "10px 16px", cursor: "pointer",
-                fontFamily: "sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.08em",
-                display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-              <Icon name="refresh" size={14} /> RESET ALL PROGRESS
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* FLASHCARD AREA */}
-            {totalDue === 0 ? (
-              <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 20, padding: 48, textAlign: "center" }}>
-                <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
-                <div style={{ color: "#e2d9f3", fontSize: 20, fontWeight: 700, marginBottom: 8 }}>All caught up!</div>
-                <div style={{ color: "#6b7280", fontFamily: "sans-serif", fontSize: 13 }}>
-                  No cards due right now. Come back later or add custom cards.
-                </div>
-              </div>
-            ) : (
-              <>
-                {/* Progress bar */}
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                  <div style={{ flex: 1, height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 999 }}>
-                    <div style={{ height: "100%", borderRadius: 999,
-                      background: "linear-gradient(90deg, #7c3aed, #3b82f6)",
-                      width: `${(currentIndex / Math.max(totalDue, 1)) * 100}%`,
-                      transition: "width 0.3s ease" }} />
-                  </div>
-                  <div style={{ color: "#6b7280", fontFamily: "sans-serif", fontSize: 11,
-                    letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
-                    {currentIndex + 1} / {totalDue}
-                  </div>
-                </div>
-
-                {/* Card */}
-                {currentCard && (
-                  <div
-                    onClick={() => setFlipped(f => !f)}
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: 20,
-                      padding: "40px 32px",
-                      minHeight: 260,
-                      cursor: "pointer",
-                      position: "relative",
-                      overflow: "hidden",
-                      transition: "transform 0.1s ease, box-shadow 0.2s ease",
-                      boxShadow: flipped
-                        ? "0 0 40px rgba(124,58,237,0.2), 0 8px 32px rgba(0,0,0,0.4)"
-                        : "0 4px 20px rgba(0,0,0,0.3)",
-                      backdropFilter: "blur(12px)",
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
-                  >
-                    {/* Shimmer line */}
-                    <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 1,
-                      background: "linear-gradient(90deg, transparent, rgba(167,139,250,0.5), transparent)" }} />
-
-                    {/* Freq indicator */}
-                    <div style={{ position: "absolute", top: 16, right: 20,
-                      display: "flex", alignItems: "center", gap: 4 }}>
-                      {currentCard.freq > 0 && (
-                        <>
-                          <Icon name="star" size={10} />
-                          <span style={{ color: "#f59e0b", fontFamily: "sans-serif",
-                            fontSize: 10, letterSpacing: "0.05em" }}>×{currentCard.freq}</span>
-                        </>
-                      )}
-                      {currentCard.id && currentCard.id.startsWith("custom_") && (
-                        <span style={{ color: "#6b7280", fontFamily: "sans-serif",
-                          fontSize: 10, marginLeft: 4, letterSpacing: "0.08em" }}>CUSTOM</span>
-                      )}
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
-                      <TypeBadge type={currentCard.type} />
-                      {currentCard.lapses > 0 && (
-                        <span style={{ color: "#ef4444", fontFamily: "sans-serif", fontSize: 10,
-                          background: "rgba(239,68,68,0.1)", padding: "2px 8px", borderRadius: 999,
-                          border: "1px solid rgba(239,68,68,0.2)" }}>
-                          {currentCard.lapses} lapse{currentCard.lapses > 1 ? "s" : ""}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Spanish word - always shown */}
-                    <div style={{ textAlign: "center", marginBottom: flipped ? 24 : 0 }}>
-                      <div style={{ fontSize: 44, fontWeight: 700, color: "#f3f0ff",
-                        letterSpacing: "-0.02em", marginBottom: 8,
-                        textShadow: "0 0 40px rgba(167,139,250,0.3)" }}>
-                        {currentCard.sp}
-                      </div>
-                    </div>
-
-                    {/* English translation - shown on flip */}
-                    {flipped ? (
-                      <div style={{ textAlign: "center", animation: "fadeIn 0.2s ease" }}>
-                        <div style={{ width: "60%", height: 1, background: "rgba(255,255,255,0.1)",
-                          margin: "0 auto 20px" }} />
-                        <div style={{ fontSize: 20, color: "#c4b5fd", fontStyle: "italic",
-                          letterSpacing: "0.01em", lineHeight: 1.5 }}>
-                          {currentCard.en}
-                        </div>
-                        {currentCard.interval > 0 && (
-                          <div style={{ marginTop: 16, color: "#4b5563", fontFamily: "sans-serif",
-                            fontSize: 11, letterSpacing: "0.08em" }}>
-                            NEXT REVIEW: {currentCard.interval === 1 ? "tomorrow" : `${currentCard.interval} days`}
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <div style={{ textAlign: "center", marginTop: 16 }}>
-                        <div style={{ color: "#374151", fontFamily: "sans-serif", fontSize: 12,
-                          letterSpacing: "0.12em", display: "flex", alignItems: "center",
-                          justifyContent: "center", gap: 6 }}>
-                          <Icon name="eye" size={13} /> TAP TO REVEAL
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Grade buttons */}
-                {flipped && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginTop: 16 }}>
-                    {[
-                      { grade: 0, label: "Again", sub: "<1d", bg: "rgba(239,68,68,0.15)", border: "rgba(239,68,68,0.4)", color: "#f87171", hover: "rgba(239,68,68,0.25)" },
-                      { grade: 1, label: "Hard", sub: "~1d", bg: "rgba(245,158,11,0.15)", border: "rgba(245,158,11,0.4)", color: "#fcd34d", hover: "rgba(245,158,11,0.25)" },
-                      { grade: 2, label: "Good", sub: "~3d", bg: "rgba(16,185,129,0.15)", border: "rgba(16,185,129,0.4)", color: "#6ee7b7", hover: "rgba(16,185,129,0.25)" },
-                      { grade: 3, label: "Easy", sub: "~6d", bg: "rgba(59,130,246,0.15)", border: "rgba(59,130,246,0.4)", color: "#93c5fd", hover: "rgba(59,130,246,0.25)" },
-                    ].map(({ grade, label, sub, bg, border, color }) => (
-                      <button key={grade} onClick={() => handleGrade(grade)}
-                        style={{ background: bg, border: `1px solid ${border}`, borderRadius: 12,
-                          color, padding: "12px 8px", cursor: "pointer", fontFamily: "sans-serif",
-                          fontWeight: 700, fontSize: 13, letterSpacing: "0.05em", transition: "all 0.15s",
-                          display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
-                        <span>{label}</span>
-                        <span style={{ fontSize: 10, opacity: 0.7, fontWeight: 400 }}>{sub}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* ALL CARDS LIST (compact) */}
-            <div style={{ marginTop: 32 }}>
-              <div style={{ color: "#4b5563", fontFamily: "sans-serif", fontSize: 11,
-                letterSpacing: "0.12em", marginBottom: 12, display: "flex", alignItems: "center", gap: 6 }}>
-                <Icon name="book" size={12} /> ALL CARDS
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                {(filterType === "all" ? cards : cards.filter(c => c.type === filterType))
-                  .sort((a, b) => b.freq - a.freq)
-                  .map(card => (
-                  <div key={card.id} style={{ display: "flex", alignItems: "center", gap: 12,
-                    background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)",
-                    borderRadius: 8, padding: "8px 12px" }}>
-                    <TypeBadge type={card.type} />
-                    <span style={{ color: "#e2d9f3", fontWeight: 600, fontSize: 14, minWidth: 100 }}>{card.sp}</span>
-                    <span style={{ color: "#6b7280", fontSize: 12, fontFamily: "sans-serif", flex: 1,
-                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{card.en}</span>
-                    <span style={{ color: card.interval >= 21 ? "#34d399" : card.repetitions >= 2 ? "#a78bfa" : "#374151",
-                      fontSize: 10, fontFamily: "sans-serif", letterSpacing: "0.08em", whiteSpace: "nowrap" }}>
-                      {card.interval >= 21 ? "✓ mastered" : card.repetitions >= 2 ? `${card.interval}d` : "new"}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* MODAL */}
-      {showModal && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          zIndex: 100, backdropFilter: "blur(4px)", padding: 16 }}>
-          <div style={{ background: "#0f0f2e", border: "1px solid rgba(167,139,250,0.3)",
-            borderRadius: 20, padding: 32, width: "100%", maxWidth: 420,
-            boxShadow: "0 0 60px rgba(124,58,237,0.3)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
-              <div style={{ color: "#e2d9f3", fontWeight: 700, fontSize: 18 }}>Add Custom Card</div>
-              <button onClick={() => setShowModal(false)}
-                style={{ background: "none", border: "none", color: "#6b7280", cursor: "pointer" }}>
-                <Icon name="x" size={20} />
-              </button>
-            </div>
-            {[
-              { key: "sp", label: "Spanish (base form)", placeholder: "e.g. hechizo" },
-              { key: "en", label: "English translation", placeholder: "e.g. spell / charm (magic incantation)" },
-            ].map(({ key, label, placeholder }) => (
-              <div key={key} style={{ marginBottom: 16 }}>
-                <label style={{ color: "#9ca3af", fontFamily: "sans-serif", fontSize: 11,
-                  letterSpacing: "0.1em", display: "block", marginBottom: 6 }}>{label.toUpperCase()}</label>
-                <input value={newCard[key]}
-                  onChange={e => setNewCard(p => ({ ...p, [key]: e.target.value }))}
-                  placeholder={placeholder}
-                  style={{ width: "100%", background: "rgba(255,255,255,0.05)",
-                    border: "1px solid rgba(255,255,255,0.15)", borderRadius: 8,
-                    color: "#e2d9f3", padding: "10px 14px", fontFamily: "Georgia, serif",
-                    fontSize: 15, outline: "none", boxSizing: "border-box" }} />
-              </div>
-            ))}
-            <div style={{ marginBottom: 24 }}>
-              <label style={{ color: "#9ca3af", fontFamily: "sans-serif", fontSize: 11,
-                letterSpacing: "0.1em", display: "block", marginBottom: 6 }}>TYPE</label>
-              <div style={{ display: "flex", gap: 8 }}>
-                {["verb", "noun", "adj"].map(t => (
-                  <button key={t} onClick={() => setNewCard(p => ({ ...p, type: t }))}
-                    style={{ flex: 1, background: newCard.type === t ? "rgba(124,58,237,0.3)" : "rgba(255,255,255,0.05)",
-                      border: `1px solid ${newCard.type === t ? "rgba(167,139,250,0.5)" : "rgba(255,255,255,0.1)"}`,
-                      borderRadius: 8, color: newCard.type === t ? "#c4b5fd" : "#6b7280",
-                      padding: "8px", cursor: "pointer", fontFamily: "sans-serif",
-                      fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}>
-                    {t.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button onClick={handleAddCard}
-              style={{ width: "100%", background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                border: "none", borderRadius: 10, color: "white", padding: "12px",
-                cursor: "pointer", fontFamily: "sans-serif", fontSize: 14,
-                fontWeight: 700, letterSpacing: "0.08em" }}>
-              ADD CARD ✨
-            </button>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-        * { -webkit-tap-highlight-color: transparent; }
-        input::placeholder { color: #374151; }
-        ::-webkit-scrollbar { width: 4px; } ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: rgba(124,58,237,0.3); border-radius: 999px; }
-      `}</style>
-    </div>
-  );
-}
+export const TOTAL_SOURCE_CARDS = SEED_CARD_DECK.length;
+export const TOTAL_FORMATTED_CARDS = FORMATTED_SEED_CARDS.length;

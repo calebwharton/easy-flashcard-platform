@@ -26,20 +26,7 @@ export default async function LoginPage() {
             Continue with Google
           </button>
         </form>
-
-        <form
-          action={async () => {
-            "use server";
-            await signIn("github", { redirectTo: "/dashboard" });
-          }}
-        >
-          <button className="w-full rounded-xl border border-border px-4 py-2 hover:bg-background" type="submit">
-            Continue with GitHub
-          </button>
-        </form>
       </div>
-
-      <p className="text-center text-sm text-muted-foreground">Configure OAuth keys in env vars to enable provider login.</p>
     </div>
   );
 }

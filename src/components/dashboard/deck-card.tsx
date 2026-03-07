@@ -18,7 +18,7 @@ export function DeckCard({ deck }: DeckCardProps) {
       <p className="font-medium">{deck.name}</p>
       <p className="mt-1 line-clamp-2 min-h-10 text-sm text-muted-foreground">{deck.description || "No description yet."}</p>
       <p className="mt-3 text-sm text-muted-foreground">
-        {deck.language || "Spanish"} · {deck._count.cards} cards
+        Type: {deck.language || "Spanish"} · {deck._count.cards} cards
       </p>
       <div className="mt-4 flex gap-2">
         <Link className="rounded-xl border border-border px-3 py-2 text-sm text-muted-foreground hover:bg-background" href={`/deck/${deck.id}`}>

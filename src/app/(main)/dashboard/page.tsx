@@ -17,19 +17,27 @@ export default async function DashboardPage() {
 
       <DashboardStats deckCount={decks.length} totalCards={totalCards} />
 
-      <form
-        action={async () => {
-          "use server";
-          const starterDeck = await createStarterDeck();
-          redirect(`/deck/${starterDeck.id}`);
-        }}
-      >
-        <button className="rounded-xl border border-border bg-card px-4 py-2 text-sm text-muted-foreground hover:bg-background" type="submit">
-          Create HP starter deck from local data
-        </button>
-      </form>
+      {decks.length === 0 ? (
+        <section className="space-y-4">
+          <form
+            action={async () => {
+              "use server";
+              const starterDeck = await createStarterDeck();
+              redirect(`/deck/${starterDeck.id}`);
+            }}
+          >
+            <button
+              className="rounded-xl border border-border bg-card px-4 py-2 text-sm text-muted-foreground hover:bg-background"
+              type="submit"
+            >
+              Create starter deck
+            </button>
+          </form>
 
-      <CreateDeckForm />
+          <CreateDeckForm />
+        </section>
+      ) : null}
+
       <DeckGrid decks={decks} />
     </div>
   );

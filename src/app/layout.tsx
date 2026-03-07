@@ -13,8 +13,11 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  title: "Spanish Flashcards",
+  title: "Flashcards",
   description: "Calm spaced-repetition flashcards for language learning",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({

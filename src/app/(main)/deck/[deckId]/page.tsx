@@ -1,6 +1,5 @@
 import { getDeckCards } from "@/app/actions/card";
 import { getOwnedDeck } from "@/app/actions/deck";
-import { AddCardForm } from "@/components/deck/add-card-form";
 import { CardList } from "@/components/deck/card-list";
 import { DeckHeader } from "@/components/deck/deck-header";
 
@@ -15,8 +14,7 @@ export default async function DeckPage({ params }: DeckPageProps) {
   return (
     <div className="space-y-6">
       <DeckHeader deck={deck} />
-      <AddCardForm deckId={deckId} />
-      <CardList cards={cards} />
+      <CardList deckId={deckId} cards={cards} />
     </div>
   );
 }

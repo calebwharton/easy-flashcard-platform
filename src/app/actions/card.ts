@@ -41,6 +41,27 @@ async function requireOwnedDeck(deckId: string, userId: string) {
   return deck;
 }
 
+async function requireOwnedCard(cardId: string, userId: string) {
+  const card = await prisma.card.findFirst({
+    where: {
+      id: cardId,
+      deck: {
+        userId,
+      },
+    },
+    select: {
+      id: true,
+      deckId: true,
+    },
+  });
+
+  if (!card) {
+    throw new Error("Card not found");
+  }
+
+  return card;
+}
+
 export async function addCard(
   deckId: string,
   data: {
@@ -210,4 +231,66 @@ export async function getDeckCards(deckId: string) {
     where: { deckId },
     orderBy: [{ createdAt: "desc" }],
   });
+}
+
+export async function getOwnedCard(deckId: string, cardId: string) {
+  const userId = await requireUserId();
+  await requireOwnedDeck(deckId, userId);
+
+  const card = await prisma.card.findFirst({
+    where: {
+      id: cardId,
+      deckId,
+    },
+    select: {
+      id: true,
+      deckId: true,
+      front: true,
+      back: true,
+      tags: true,
+    },
+  });
+
+  if (!card) {
+    throw new Error("Card not found");
+  }
+
+  return card;
+}
+
+export async function updateCard(
+  cardId: string,
+  data: {
+    front: string;
+    back: string;
+    tags?: string[];
+  },
+) {
+  const userId = await requireUserId();
+  const ownedCard = await requireOwnedCard(cardId, userId);
+  const parsed = addCardSchema.parse(data);
+
+  const updated = await prisma.card.update({
+    where: { id: cardId },
+    data: {
+      front: parsed.front,
+      back: parsed.back,
+      tags: parsed.tags,
+    },
+  });
+
+  revalidatePath(`/deck/${ownedCard.deckId}`);
+  revalidatePath(`/study/${ownedCard.deckId}`);
+
+  return updated;
+}
+
+export async function deleteCard(cardId: string) {
+  const userId = await requireUserId();
+  const ownedCard = await requireOwnedCard(cardId, userId);
+
+  await prisma.card.delete({ where: { id: cardId } });
+
+  revalidatePath(`/deck/${ownedCard.deckId}`);
+  revalidatePath(`/study/${ownedCard.deckId}`);
 }

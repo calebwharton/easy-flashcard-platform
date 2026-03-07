@@ -10,6 +10,7 @@ const createDeckSchema = z.object({
   name: z.string().trim().min(1).max(100),
   description: z.string().trim().max(500).optional(),
   language: z.string().trim().max(50).optional(),
+  type: z.string().trim().max(50).optional(),
   color: z.string().trim().max(20).optional(),
   icon: z.string().trim().max(50).optional(),
 });
@@ -29,6 +30,7 @@ export async function createDeck(data: {
   name: string;
   description?: string;
   language?: string;
+  type?: string;
   color?: string;
   icon?: string;
 }) {
@@ -40,7 +42,7 @@ export async function createDeck(data: {
       userId,
       name: parsed.name,
       description: parsed.description,
-      language: parsed.language ?? "Spanish",
+      language: parsed.language ?? parsed.type ?? "Spanish",
       color: parsed.color,
       icon: parsed.icon,
     },
@@ -48,6 +50,52 @@ export async function createDeck(data: {
 
   revalidatePath("/dashboard");
   return deck;
+}
+
+export async function updateDeck(
+  deckId: string,
+  data: {
+    name: string;
+    description?: string;
+    language?: string;
+    type?: string;
+    color?: string;
+    icon?: string;
+  },
+) {
+  const userId = await requireUserId();
+  const parsed = createDeckSchema.parse(data);
+
+  const deck = await prisma.deck.findFirst({
+    where: {
+      id: deckId,
+      userId,
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  if (!deck) {
+    throw new Error("Deck not found");
+  }
+
+  const updated = await prisma.deck.update({
+    where: { id: deckId },
+    data: {
+      name: parsed.name,
+      description: parsed.description,
+      language: parsed.language ?? parsed.type ?? "Spanish",
+      color: parsed.color,
+      icon: parsed.icon,
+    },
+  });
+
+  revalidatePath("/dashboard");
+  revalidatePath(`/deck/${deckId}`);
+  revalidatePath(`/deck/${deckId}/edit`);
+
+  return updated;
 }
 
 export async function deleteDeck(deckId: string) {

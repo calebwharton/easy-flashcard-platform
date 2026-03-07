@@ -1,10 +1,12 @@
+import { redirect } from "next/navigation";
 import { addCard } from "@/app/actions/card";
 
 type AddCardFormProps = {
   deckId: string;
+  redirectTo?: string;
 };
 
-export function AddCardForm({ deckId }: AddCardFormProps) {
+export function AddCardForm({ deckId, redirectTo }: AddCardFormProps) {
   return (
     <form
       className="space-y-3 rounded-2xl border border-border bg-card p-5"
@@ -22,6 +24,10 @@ export function AddCardForm({ deckId }: AddCardFormProps) {
           back: String(formData.get("back") || ""),
           tags,
         });
+
+        if (redirectTo) {
+          redirect(redirectTo);
+        }
       }}
     >
       <p className="text-lg font-medium">Add card</p>
